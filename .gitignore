@@ -1,0 +1,37 @@
+# Build
+build/
+
+out/
+
+Debug/
+
+Release/
+
+cmake-build-*/
+
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.map
+
+# VSCode
+.vscode/
+
+# CubeMX
+
+*.launch
+
+# OS
+
+.DS_Store
+Thumbs.db
+
+# Logs
+
+*.log
+
+# Backup
+
+*.bak
