@@ -1,37 +1,47 @@
-# Build
+# =========================
+# Build Directories
+# =========================
 build/
-
 out/
-
 Debug/
-
 Release/
-
 cmake-build-*/
 
+# =========================
+# CMake System Files
+# =========================
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+
+# =========================
+# Build Outputs & Artifacts
+# =========================
 *.o
 *.obj
 *.elf
 *.bin
 *.hex
 *.map
+*.a
+*.d
 
-# VSCode
+# =========================
+# IDEs & Tools
+# =========================
 .vscode/
-
-# CubeMX
-
 *.launch
 
-# OS
-
+# =========================
+# OS Generated Files
+# =========================
 .DS_Store
 Thumbs.db
 
-# Logs
-
+# =========================
+# Logs & Backups
+# =========================
 *.log
-
-# Backup
-
 *.bak
