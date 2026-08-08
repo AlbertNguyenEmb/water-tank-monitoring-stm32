@@ -4,7 +4,7 @@
 #include "relay.h"
 #include "water_sensor.h"
 #include "oled.h"
-/* buzzer.h khong co ham Init rieng theo bang API - bo qua o day */
+#include "buzzer.h"
 
 /* Middleware */
 #include "filter.h"
@@ -16,7 +16,7 @@
 
 void App_Init(void)
 {
-    /* 1) Khoi tao driver phan cung truoc */
+    /* 1) Khoi tao driver phan cung */
     Relay_Init();
     WaterSensor_Init();
     OLED_Init();

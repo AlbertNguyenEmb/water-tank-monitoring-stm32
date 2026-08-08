@@ -1,10 +1,7 @@
 #include "filter.h"
 
-/* ===================== HIEU CHUAN CAM BIEN =====================
- * QUAN TRONG: day chi la gia tri vi du. Ban PHAI do lai thuc te tren
- * cam bien/be nuoc cua nhom (do o Muc 4 dinh cua de cuong) va thay
- * vao day truoc khi nghiem thu.
- *
+
+ /*================================================================
  * ADC_RAW_AT_EMPTY : gia tri ADC do duoc khi be can (0%)
  * ADC_RAW_AT_FULL  : gia tri ADC do duoc khi be day  (100%)
  * ================================================================ */
