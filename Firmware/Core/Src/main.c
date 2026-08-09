@@ -24,6 +24,10 @@
 #include "usart.h"
 #include "gpio.h"
 
+#include "water_sensor.h"
+
+#include <stdio.h>
+#include <stdint.h>
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -47,7 +51,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+static char tx_buffer[128];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -67,46 +71,38 @@ void SystemClock_Config(void);
   */
 int main(void)
 {
+    HAL_Init();
 
-  /* USER CODE BEGIN 1 */
+    SystemClock_Config();
 
-  /* USER CODE END 1 */
+    MX_GPIO_Init();
+    MX_ADC1_Init();
+    MX_USART2_UART_Init();
 
-  /* MCU Configuration--------------------------------------------------------*/
+    WaterSensor_Init();
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+    while (1)
+    {
+        float level = WaterSensor_ReadPercent();
+        uint32_t adc = WaterSensor_GetRawADC();
 
-  /* USER CODE BEGIN Init */
+        int len = sprintf(
+            tx_buffer,
+            "ADC = %lu | Level = %.1f%% | Valid = %d\r\n",
+            (unsigned long)adc,
+            level,
+            WaterSensor_IsValid()
+        );
 
-  /* USER CODE END Init */
+        HAL_UART_Transmit(
+            &huart2,
+            (uint8_t *)tx_buffer,
+            (uint16_t)len,
+            100
+        );
 
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_ADC1_Init();
-  MX_I2C1_Init();
-  MX_TIM2_Init();
-  MX_USART2_UART_Init();
-  /* USER CODE BEGIN 2 */
-
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
+        HAL_Delay(1000);
+    }
 }
 
 /**
