@@ -57,7 +57,7 @@ echo ===============================================
 echo Build completed successfully!
 echo.
 
-STM32_Programmer_CLI -c port=SWD sn=36FF67064D50353524171043 -w build/stm32f103_aht20_baremetal.bin 0x08000000 -v -rst
+STM32_Programmer_CLI -c port=SWD sn=36FF67064D50353524171043 -w build/water_tank_monitor.bin 0x08000000 -v -rst
 
 pause
 endlocal

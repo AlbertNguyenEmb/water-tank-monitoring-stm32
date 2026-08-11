@@ -28,6 +28,9 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 # ==============================================================================
 add_executable(${CMAKE_PROJECT_NAME})
 
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -u _printf_float
+)
 # ==============================================================================
 # 3. Source Discovery 
 # ==============================================================================
