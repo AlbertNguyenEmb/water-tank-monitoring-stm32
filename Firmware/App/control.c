@@ -3,7 +3,7 @@
 #include "water_sensor.h"
 #include "relay.h"
 #include "buzzer.h"
-#include "oled.h"
+#include "oled_i2c.h"
 
 void Control_Init(void)
 {
