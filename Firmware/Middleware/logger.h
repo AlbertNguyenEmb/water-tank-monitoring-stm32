@@ -2,15 +2,20 @@
 #define LOGGER_H
 
 /**
- * @brief  Khoi tao Logger (thuong khong can lam gi them vi UART da duoc
- *         CubeMX/HAL_UART_Init() khoi tao trong main.c). Goi 1 lan trong main().
+ * @brief Khoi tao Logger va gui header CSV qua UART.
  */
 void Logger_Init(void);
 
 /**
- * @brief  Gui 1 dong log qua UART dang CSV: tick,percent,state
- *         Goi sau Control_Update() moi chu ky, hoac cach vai chu ky
- *         (vd moi 1s) neu muon giam tai UART.
+ * @brief Ghi mot dong log cua chu ky hien tai.
+ *
+ * Du lieu duoc lay tu FSM:
+ * - Timestamp: HAL_GetTick()
+ * - Muc nuoc: gia tri da loc ma FSM su dung
+ * - Trang thai: state hien tai cua FSM
+ *
+ * Format:
+ * time_ms,level_percent,state
  */
 void Logger_Run(void);
 

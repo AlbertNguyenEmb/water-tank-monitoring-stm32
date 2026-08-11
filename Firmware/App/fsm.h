@@ -37,4 +37,6 @@ void FSM_Run(void);
  */
 FSM_State_t FSM_GetState(void);
 
+float FSM_GetLevelPercent(void);
+
 #endif /* FSM_H */

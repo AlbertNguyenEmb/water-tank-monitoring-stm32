@@ -3,7 +3,7 @@
 /* BSP (Drivers/BSP) */
 #include "relay.h"
 #include "water_sensor.h"
-#include "oled.h"
+#include "oled_i2c.h"
 #include "buzzer.h"
 
 /* Middleware */

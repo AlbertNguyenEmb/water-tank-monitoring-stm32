@@ -3,6 +3,13 @@
 #include "water_sensor.h"
 
 static FSM_State_t s_state = FSM_STATE_INIT;
+static float s_level_percent = 0.0f;
+
+float FSM_GetLevelPercent(void)
+{
+    return s_level_percent;
+}
+
 
 /**
  * @brief  Dung chung cho Init va cho luc Error phuc hoi: doc % hien tai
@@ -28,6 +35,7 @@ static FSM_State_t Classify(float percent)
 void FSM_Init(void)
 {
     s_state = FSM_STATE_INIT;
+    s_level_percent = 0.0f;
 }
 
 FSM_State_t FSM_GetState(void)
@@ -39,18 +47,16 @@ void FSM_Run(void)
 {
     /* FSM_Run() khong nhan tham so - tu doc cam bien va loc ben trong. */
     uint8_t adc_valid = WaterSensor_IsValid() ? 1U : 0U;
-    float   percent;
+    float percent;
 
-    /* ADC bat thuong duoc kiem tra XUYEN SUOT, o BAT KY trang thai nao
-     * (khong chi rieng Overflow) - moi chu ky FSM_Run() deu kiem tra lai. */
     if (!adc_valid)
     {
         s_state = FSM_STATE_ERROR;
         return;
     }
 
-    /* Chi doc & loc khi ADC hop le */
     percent = Filter_Update(WaterSensor_ReadPercent());
+    s_level_percent = percent;
 
     switch (s_state)
     {
