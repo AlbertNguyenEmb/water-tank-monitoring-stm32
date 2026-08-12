@@ -15,7 +15,7 @@
 #include "gpio.h"
 #include "logger.h"
 #include "oled.h"
-
+#include "relay.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -68,117 +68,22 @@ int main(void)
 
     /* Initialize all configured peripherals */
     MX_GPIO_Init();
+    Relay_Init();
     MX_I2C1_Init();
     MX_TIM2_Init();
     MX_TIM3_Init();
     MX_USART1_UART_Init();
 
-    /* LED initially OFF */
-    HAL_GPIO_WritePin(
-        GPIOC,
-        GPIO_PIN_13,
-        GPIO_PIN_RESET
-    );
-
-    /* Initialize logger */
-    Logger_Init();
-
-    /* Give peripherals some time to stabilize */
-    HAL_Delay(100);
-
-    /* ---------------------------------------------------------------------- */
-    /* I2C SCAN                                                              */
-    /* ---------------------------------------------------------------------- */
-
-    Logger_Print("\r\n");
-    Logger_Print("================================\r\n");
-    Logger_Print("       OLED TEST START\r\n");
-    Logger_Print("================================\r\n");
-
-    I2C_Scan();
-
-    /* ---------------------------------------------------------------------- */
-    /* OLED INIT                                                             */
-    /* ---------------------------------------------------------------------- */
-
-    Logger_Print("Initializing OLED...\r\n");
-
-    OLED_Init();
-
-    Logger_Print("OLED Init Done\r\n");
-
-    /* ---------------------------------------------------------------------- */
-    /* Initial OLED screen                                                   */
-    /* ---------------------------------------------------------------------- */
-
-    OLED_ShowLevel(65.0f);
-    OLED_ShowStatus("FILLING");
-
-    Logger_Print("OLED Display Test Started\r\n");
+    Logger_Print("Relay Test Started\r\n");
 
     /* Infinite loop --------------------------------------------------------*/
     while (1)
     {
-        /* -------------------------------------------------------------- */
-        /* Test 1: FILLING                                               */
-        /* -------------------------------------------------------------- */
-
-        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-
-        OLED_ShowLevel(35.5f);
-        OLED_ShowStatus("FILLING");
-
-        Logger_Print(
-            "[OLED] Level = 35.5%% | State = FILLING\r\n"
-        );
+        Relay_On();
 
         HAL_Delay(2000);
 
-
-        /* -------------------------------------------------------------- */
-        /* Test 2: NORMAL                                                */
-        /* -------------------------------------------------------------- */
-
-        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-
-        OLED_ShowLevel(65.0f);
-        OLED_ShowStatus("NORMAL");
-
-        Logger_Print(
-            "[OLED] Level = 65.0%% | State = NORMAL\r\n"
-        );
-
-        HAL_Delay(2000);
-
-
-        /* -------------------------------------------------------------- */
-        /* Test 3: FULL                                                  */
-        /* -------------------------------------------------------------- */
-
-        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-
-        OLED_ShowLevel(85.7f);
-        OLED_ShowStatus("FULL");
-
-        Logger_Print(
-            "[OLED] Level = 85.7%% | State = FULL\r\n"
-        );
-
-        HAL_Delay(2000);
-
-
-        /* -------------------------------------------------------------- */
-        /* Test 4: ERROR                                                 */
-        /* -------------------------------------------------------------- */
-
-        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-
-        OLED_ShowLevel(-1.0f);
-        OLED_ShowStatus("SENSOR ERR");
-
-        Logger_Print(
-            "[OLED] Level = ERROR | State = SENSOR ERR\r\n"
-        );
+        Relay_Off();
 
         HAL_Delay(2000);
     }
