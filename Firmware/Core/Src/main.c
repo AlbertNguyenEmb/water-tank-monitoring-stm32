@@ -18,6 +18,8 @@
 #include "relay.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "filter.h"
+#include "fsm_logic.h"
 
 /* USER CODE END Includes */
 
@@ -46,6 +48,8 @@ void SystemClock_Config(void);
 
 /* USER CODE BEGIN PFP */
 void I2C_Scan(void);
+static void Filter_Test_Run(void);
+static void FSM_Test_Run(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -73,19 +77,15 @@ int main(void)
     MX_TIM2_Init();
     MX_TIM3_Init();
     MX_USART1_UART_Init();
+    Logger_Init();
 
-    Logger_Print("Relay Test Started\r\n");
+    Filter_Test_Run();
+    FSM_Test_Run();
 
     /* Infinite loop --------------------------------------------------------*/
     while (1)
     {
-        Relay_On();
-
-        HAL_Delay(2000);
-
-        Relay_Off();
-
-        HAL_Delay(2000);
+        HAL_Delay(1000);
     }
 }
 
@@ -156,6 +156,176 @@ void I2C_Scan(void)
     }
 
     Logger_Print("I2C Scan Done\r\n");
+}
+
+static float Test_AbsFloat(float value)
+{
+    if (value < 0.0f)
+    {
+        return -value;
+    }
+
+    return value;
+}
+
+static void Filter_Test_Run(void)
+{
+    typedef struct
+    {
+        float input_distance_cm;
+        float expected_filtered_cm;
+        float expected_water_level_percent;
+        bool expected_valid;
+        bool expected_ready;
+        uint8_t expected_sample_count;
+    } FilterTestCase_t;
+
+    const float test_tank_height_cm = 100.0f;
+
+    const FilterTestCase_t test_cases[] = {
+        {20.1f, 20.10f, 79.90f, true, false, 1U},
+        {20.3f, 20.20f, 79.80f, true, false, 2U},
+        {19.8f, 20.07f, 79.93f, true, false, 3U},
+        {20.7f, 20.23f, 79.77f, true, false, 4U},
+        {20.0f, 20.18f, 79.82f, true, true, 5U},
+        {21.1f, 20.38f, 79.62f, true, true, 5U},
+        {0.0f, 20.38f, 79.62f, false, true, 5U},
+        {401.0f, 20.38f, 79.62f, false, true, 5U},
+    };
+
+    DistanceFilter_t filter;
+    float filtered_cm = 0.0f;
+    float water_level_percent = 0.0f;
+    uint8_t pass_count = 0U;
+    uint8_t total_count = (uint8_t)(sizeof(test_cases) / sizeof(test_cases[0]));
+
+    Filter_Init(&filter);
+    Filter_SetTankHeightCm(&filter, test_tank_height_cm);
+
+    Logger_Print("\r\nFilter test started\r\n");
+    Logger_Printf(
+        "Tank height: %6.2f cm\r\n",
+        Filter_GetTankHeightCm(&filter)
+    );
+    Logger_Print("Input distance -> filtered distance -> water level\r\n");
+
+    for (uint8_t i = 0U; i < total_count; i++)
+    {
+        bool valid = Filter_UpdateWaterLevel(
+            &filter,
+            test_cases[i].input_distance_cm,
+            &filtered_cm,
+            &water_level_percent
+        );
+
+        bool passed =
+            (valid == test_cases[i].expected_valid) &&
+            (Filter_IsReady(&filter) == test_cases[i].expected_ready) &&
+            (Filter_GetSampleCount(&filter) == test_cases[i].expected_sample_count) &&
+            (Test_AbsFloat(filtered_cm - test_cases[i].expected_filtered_cm) <= 0.02f) &&
+            (Test_AbsFloat(water_level_percent - test_cases[i].expected_water_level_percent) <= 0.02f);
+
+        if (passed)
+        {
+            pass_count++;
+        }
+
+        Logger_Printf(
+            "T%02u %s | in=%6.2f cm | filtered=%6.2f cm | level=%6.2f%% | valid=%u ready=%u count=%u\r\n",
+            (unsigned int)(i + 1U),
+            passed ? "PASS" : "FAIL",
+            test_cases[i].input_distance_cm,
+            filtered_cm,
+            water_level_percent,
+            valid ? 1U : 0U,
+            Filter_IsReady(&filter) ? 1U : 0U,
+            (unsigned int)Filter_GetSampleCount(&filter)
+        );
+    }
+
+    Filter_Reset(&filter);
+
+    Logger_Printf(
+        "After reset | ready=%u count=%u distance=%6.2f cm level=%6.2f%%\r\n",
+        Filter_IsReady(&filter) ? 1U : 0U,
+        (unsigned int)Filter_GetSampleCount(&filter),
+        Filter_GetDistanceCm(&filter),
+        Filter_GetWaterLevelPercent(&filter)
+    );
+
+    Logger_Printf(
+        "Filter test done: %u/%u passed\r\n\r\n",
+        pass_count,
+        total_count
+    );
+}
+
+static void FSM_Test_Run(void)
+{
+    typedef struct
+    {
+        FsmInput_t input;
+        FsmState_t expected_state;
+        FsmError_t expected_error;
+        bool expected_pump_on;
+        bool expected_buzzer_on;
+    } FsmTestCase_t;
+
+    const FsmTestCase_t test_cases[] = {
+        {{50.0f, true, false, 0U}, FSM_STATE_MONITORING, FSM_ERROR_NONE, false, false},
+        {{15.0f, true, false, 1000U}, FSM_STATE_FILLING, FSM_ERROR_NONE, true, false},
+        {{50.0f, true, false, 2000U}, FSM_STATE_FILLING, FSM_ERROR_NONE, true, false},
+        {{90.0f, true, false, 3000U}, FSM_STATE_MONITORING, FSM_ERROR_NONE, false, false},
+        {{99.0f, true, false, 4000U}, FSM_STATE_OVERFLOW, FSM_ERROR_NONE, false, true},
+        {{95.0f, true, false, 5000U}, FSM_STATE_MONITORING, FSM_ERROR_NONE, false, false},
+        {{50.0f, false, false, 6000U}, FSM_STATE_ERROR, FSM_ERROR_SENSOR, false, true},
+        {{50.0f, true, false, 7000U}, FSM_STATE_MONITORING, FSM_ERROR_NONE, false, false},
+        {{15.0f, true, false, 8000U}, FSM_STATE_FILLING, FSM_ERROR_NONE, true, false},
+        {{15.0f, true, false, 129000U}, FSM_STATE_ERROR, FSM_ERROR_FILL_TIMEOUT, false, true},
+        {{50.0f, true, true, 130000U}, FSM_STATE_MONITORING, FSM_ERROR_NONE, false, false},
+    };
+
+    uint8_t pass_count = 0U;
+    uint8_t total_count = (uint8_t)(sizeof(test_cases) / sizeof(test_cases[0]));
+
+    Fsm_Init();
+
+    Logger_Print("\r\nFSM logic test started\r\n");
+
+    for (uint8_t i = 0U; i < total_count; i++)
+    {
+        FsmOutput_t output = Fsm_Update(&test_cases[i].input);
+
+        bool passed =
+            (output.state == test_cases[i].expected_state) &&
+            (output.error == test_cases[i].expected_error) &&
+            (output.pump_on == test_cases[i].expected_pump_on) &&
+            (output.buzzer_on == test_cases[i].expected_buzzer_on);
+
+        if (passed)
+        {
+            pass_count++;
+        }
+
+        Logger_Printf(
+            "T%02u %s | level=%5.1f%% sensor=%u reset=%u | state=%s pump=%u buzzer=%u error=%s\r\n",
+            (unsigned int)(i + 1U),
+            passed ? "PASS" : "FAIL",
+            test_cases[i].input.water_level_percent,
+            test_cases[i].input.sensor_ok ? 1U : 0U,
+            test_cases[i].input.user_reset ? 1U : 0U,
+            Fsm_GetStateName(output.state),
+            output.pump_on ? 1U : 0U,
+            output.buzzer_on ? 1U : 0U,
+            Fsm_GetErrorName(output.error)
+        );
+    }
+
+    Logger_Printf(
+        "FSM logic test done: %u/%u passed\r\n\r\n",
+        pass_count,
+        total_count
+    );
 }
 
 /* USER CODE END 4 */
