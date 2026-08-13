@@ -157,7 +157,8 @@ typedef struct {
 } SSD1306_Font_t;
 
 // Procedure definitions
-void ssd1306_Init(void);
+void ssd1306_SetI2CAddress(uint16_t address);
+SSD1306_Error_t ssd1306_Init(void);
 void ssd1306_Fill(SSD1306_COLOR color);
 void ssd1306_UpdateScreen(void);
 void ssd1306_DrawPixel(uint8_t x, uint8_t y, SSD1306_COLOR color);

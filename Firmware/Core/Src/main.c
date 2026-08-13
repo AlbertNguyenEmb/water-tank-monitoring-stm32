@@ -16,10 +16,12 @@
 #include "logger.h"
 #include "oled.h"
 #include "relay.h"
+#include "buzzer.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "filter.h"
 #include "fsm_logic.h"
+#include "ultrasonic.h"
 
 /* USER CODE END Includes */
 
@@ -30,6 +32,17 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define WATER_TANK_HEIGHT_CM             100.0f
+#define ULTRASONIC_SAMPLE_PERIOD_MS      1000U
+#define RUN_ULTRASONIC_UART_TEST         1U
+#define RUN_STARTUP_SELF_TESTS           0U
+#define RUN_BUZZER_STARTUP_TEST          0U
+
+#define FSM_LOW_LEVEL_PERCENT            20.0f
+#define FSM_FILL_STOP_PERCENT            90.0f
+#define FSM_OVERFLOW_PERCENT             98.0f
+#define FSM_OVERFLOW_CLEAR_PERCENT       95.0f
+#define FSM_FILL_TIMEOUT_MS              120000U
 
 /* USER CODE END PD */
 
@@ -40,6 +53,15 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
+#if !RUN_ULTRASONIC_UART_TEST
+static DistanceFilter_t water_level_filter;
+#endif
+static uint32_t ultrasonic_last_sample_ms;
+static UltrasonicStatus_t ultrasonic_last_reported_status;
+static uint32_t ultrasonic_test_count;
+#if !RUN_ULTRASONIC_UART_TEST
+static FsmOutput_t water_fsm_output;
+#endif
 
 /* USER CODE END PV */
 
@@ -48,8 +70,22 @@ void SystemClock_Config(void);
 
 /* USER CODE BEGIN PFP */
 void I2C_Scan(void);
+#if RUN_STARTUP_SELF_TESTS
 static void Filter_Test_Run(void);
 static void FSM_Test_Run(void);
+#endif
+#if RUN_ULTRASONIC_UART_TEST
+static void Ultrasonic_Uart_Test_Init(void);
+static bool Ultrasonic_Uart_Test_MeasureOnce(float *distance_cm);
+static bool OLED_Debug_Run(uint8_t *oled_address);
+#else
+static void Ultrasonic_WaterLevel_Test_Init(void);
+static void Ultrasonic_WaterLevel_Test_Task(void);
+#endif
+static void Buzzer_Test_Run(void);
+#if !RUN_ULTRASONIC_UART_TEST
+static void Apply_Fsm_Output(const FsmOutput_t *output);
+#endif
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -78,14 +114,91 @@ int main(void)
     MX_TIM3_Init();
     MX_USART1_UART_Init();
     Logger_Init();
+    Buzzer_Init();
 
+    Buzzer_Test_Run();
+
+#if RUN_ULTRASONIC_UART_TEST
+    Ultrasonic_Uart_Test_Init();
+    uint8_t oled_address = 0x3CU;
+    if (OLED_Debug_Run(&oled_address))
+    {
+        OLED_SetI2CAddress(oled_address);
+        if (OLED_Init())
+        {
+            OLED_ShowUltrasonicTest(0U, 0.0f, "INIT", false);
+            Logger_Printf("OLED_Init done at 0x%02X\r\n", oled_address);
+        }
+        else
+        {
+            Logger_Printf("OLED_Init failed at 0x%02X\r\n", oled_address);
+        }
+    }
+    else
+    {
+        Logger_Print("OLED_Init not run: OLED address not detected\r\n");
+    }
+#else
+    if (!OLED_Init())
+    {
+        Logger_Print("OLED_Init failed\r\n");
+    }
+
+#if RUN_STARTUP_SELF_TESTS
     Filter_Test_Run();
     FSM_Test_Run();
+#endif
+
+    Ultrasonic_WaterLevel_Test_Init();
+#endif
 
     /* Infinite loop --------------------------------------------------------*/
     while (1)
     {
-        HAL_Delay(1000);
+#if RUN_ULTRASONIC_UART_TEST
+        float distance_cm = 0.0f;
+
+        ultrasonic_test_count++;
+
+        Logger_Printf(
+            "sample=%lu start\r\n",
+            (unsigned long)ultrasonic_test_count
+        );
+
+        if (Ultrasonic_Uart_Test_MeasureOnce(&distance_cm))
+        {
+            Logger_Printf(
+                "sample=%lu distance=%6.2f cm\r\n",
+                (unsigned long)ultrasonic_test_count,
+                distance_cm
+            );
+            OLED_ShowUltrasonicTest(
+                ultrasonic_test_count,
+                distance_cm,
+                Ultrasonic_GetStatusName(Ultrasonic_GetStatus()),
+                true
+            );
+        }
+        else
+        {
+            Logger_Printf(
+                "sample=%lu distance=ERROR status=%s\r\n",
+                (unsigned long)ultrasonic_test_count,
+                Ultrasonic_GetStatusName(Ultrasonic_GetStatus())
+            );
+            OLED_ShowUltrasonicTest(
+                ultrasonic_test_count,
+                0.0f,
+                Ultrasonic_GetStatusName(Ultrasonic_GetStatus()),
+                false
+            );
+        }
+
+        HAL_Delay(ULTRASONIC_SAMPLE_PERIOD_MS);
+#else
+        Ultrasonic_WaterLevel_Test_Task();
+        HAL_Delay(5);
+#endif
     }
 }
 
@@ -158,6 +271,7 @@ void I2C_Scan(void)
     Logger_Print("I2C Scan Done\r\n");
 }
 
+#if RUN_STARTUP_SELF_TESTS
 static float Test_AbsFloat(float value)
 {
     if (value < 0.0f)
@@ -327,6 +441,317 @@ static void FSM_Test_Run(void)
         total_count
     );
 }
+#endif
+
+#if RUN_ULTRASONIC_UART_TEST
+static bool OLED_Debug_Run(uint8_t *oled_address)
+{
+    bool oled_found = false;
+    GPIO_PinState scl_state;
+    GPIO_PinState sda_state;
+
+    Logger_Print("\r\nOLED/I2C debug started\r\n");
+    Logger_Print("I2C1 pins: PB6=SCL PB7=SDA\r\n");
+    scl_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6);
+    sda_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7);
+    Logger_Printf(
+        "Idle pins: SCL=%s SDA=%s\r\n",
+        (scl_state == GPIO_PIN_SET) ? "HIGH" : "LOW",
+        (sda_state == GPIO_PIN_SET) ? "HIGH" : "LOW"
+    );
+    Logger_Print("Scanning I2C bus...\r\n");
+
+    for (uint8_t address = 1U; address < 128U; address++)
+    {
+        if (HAL_I2C_IsDeviceReady(
+                &hi2c1,
+                (uint16_t)(address << 1),
+                2,
+                20) == HAL_OK)
+        {
+            Logger_Printf(
+                "I2C device found: 0x%02X\r\n",
+                address
+            );
+
+            if ((address == 0x3CU) || (address == 0x3DU))
+            {
+                oled_found = true;
+                if (oled_address != NULL)
+                {
+                    *oled_address = address;
+                }
+            }
+        }
+    }
+
+    if (HAL_I2C_IsDeviceReady(
+            &hi2c1,
+            (uint16_t)(0x3CU << 1),
+            3,
+            100) == HAL_OK)
+    {
+        oled_found = true;
+        if (oled_address != NULL)
+        {
+            *oled_address = 0x3CU;
+        }
+        Logger_Print("OLED check 0x3C: OK\r\n");
+    }
+    else
+    {
+        Logger_Print("OLED check 0x3C: FAIL\r\n");
+    }
+
+    if (HAL_I2C_IsDeviceReady(
+            &hi2c1,
+            (uint16_t)(0x3DU << 1),
+            3,
+            100) == HAL_OK)
+    {
+        if ((oled_address != NULL) && !oled_found)
+        {
+            *oled_address = 0x3DU;
+        }
+        oled_found = true;
+        Logger_Print("OLED check 0x3D: OK\r\n");
+    }
+    else
+    {
+        Logger_Print("OLED check 0x3D: FAIL\r\n");
+    }
+
+    if (oled_found)
+    {
+        Logger_Printf(
+            "OLED hardware detected at 0x%02X. Calling OLED_Init...\r\n",
+            (oled_address != NULL) ? *oled_address : 0x3CU
+        );
+    }
+    else
+    {
+        Logger_Print("OLED not detected. Check VCC/GND/SCL/SDA/address/pull-up.\r\n");
+    }
+
+    Logger_Print("OLED/I2C debug done\r\n\r\n");
+
+    return oled_found;
+}
+
+static void Ultrasonic_Uart_Test_Init(void)
+{
+    Ultrasonic_Init();
+
+    ultrasonic_last_sample_ms = HAL_GetTick() - ULTRASONIC_SAMPLE_PERIOD_MS;
+    ultrasonic_last_reported_status = ULTRASONIC_STATUS_IDLE;
+    ultrasonic_test_count = 0U;
+
+    Logger_Print("\r\nUltrasonic UART test started\r\n");
+    Logger_Printf(
+        "TRIG=PA1 GPIO | ECHO=PA0 TIM2_CH1 | period=%u ms\r\n",
+        (unsigned int)ULTRASONIC_SAMPLE_PERIOD_MS
+    );
+    Logger_Printf(
+        "ECHO idle: PA0=%s\r\n",
+        (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) ? "HIGH" : "LOW"
+    );
+}
+
+static bool Ultrasonic_Uart_Test_MeasureOnce(float *distance_cm)
+{
+    return Ultrasonic_MeasureDistanceCm(distance_cm);
+}
+#else
+
+static void Ultrasonic_WaterLevel_Test_Init(void)
+{
+    FsmConfig_t fsm_config = {
+        FSM_LOW_LEVEL_PERCENT,
+        FSM_FILL_STOP_PERCENT,
+        FSM_OVERFLOW_PERCENT,
+        FSM_OVERFLOW_CLEAR_PERCENT,
+        FSM_FILL_TIMEOUT_MS
+    };
+
+    Ultrasonic_Init();
+    Fsm_InitWithConfig(&fsm_config);
+
+    Filter_Init(&water_level_filter);
+    Filter_SetTankHeightCm(&water_level_filter, WATER_TANK_HEIGHT_CM);
+
+    ultrasonic_last_sample_ms = HAL_GetTick() - ULTRASONIC_SAMPLE_PERIOD_MS;
+    ultrasonic_last_reported_status = ULTRASONIC_STATUS_IDLE;
+    water_fsm_output.state = FSM_STATE_INIT;
+    water_fsm_output.error = FSM_ERROR_NONE;
+    water_fsm_output.pump_on = false;
+    water_fsm_output.buzzer_on = false;
+
+    OLED_ShowLevel(-1.0f);
+    OLED_ShowStatus("INIT");
+
+    Logger_Print("\r\nWater tank monitor started\r\n");
+    Logger_Printf(
+        "TRIG=PA1 GPIO | ECHO=PA0 TIM2_CH1 | tank_height=%6.2f cm | period=%u ms\r\n",
+        Filter_GetTankHeightCm(&water_level_filter),
+        (unsigned int)ULTRASONIC_SAMPLE_PERIOD_MS
+    );
+    Logger_Printf(
+        "FSM low=%4.1f%% fill_stop=%4.1f%% overflow=%4.1f%% clear=%4.1f%% timeout=%lu ms\r\n",
+        FSM_LOW_LEVEL_PERCENT,
+        FSM_FILL_STOP_PERCENT,
+        FSM_OVERFLOW_PERCENT,
+        FSM_OVERFLOW_CLEAR_PERCENT,
+        (unsigned long)FSM_FILL_TIMEOUT_MS
+    );
+}
+
+static void Ultrasonic_WaterLevel_Test_Task(void)
+{
+    uint32_t now_ms = HAL_GetTick();
+    UltrasonicStatus_t status;
+    float raw_distance_cm = 0.0f;
+    float filtered_distance_cm = 0.0f;
+    float water_level_percent = 0.0f;
+
+    Ultrasonic_Process();
+
+    if (Ultrasonic_ReadDistanceCm(&raw_distance_cm))
+    {
+        bool filter_valid = Filter_UpdateWaterLevel(
+            &water_level_filter,
+            raw_distance_cm,
+            &filtered_distance_cm,
+            &water_level_percent
+        );
+        FsmInput_t fsm_input = {
+            water_level_percent,
+            filter_valid,
+            false,
+            now_ms
+        };
+
+        water_fsm_output = Fsm_Update(&fsm_input);
+        Apply_Fsm_Output(&water_fsm_output);
+
+        OLED_ShowLevel(water_level_percent);
+        OLED_ShowStatus(Fsm_GetStateName(water_fsm_output.state));
+
+        Logger_Printf(
+            "WATER | raw=%6.2f cm | filtered=%6.2f cm | level=%6.2f%% | state=%s | pump=%u buzzer=%u error=%s | echo=%lu us | filter=%u ready=%u count=%u\r\n",
+            raw_distance_cm,
+            filtered_distance_cm,
+            water_level_percent,
+            Fsm_GetStateName(water_fsm_output.state),
+            water_fsm_output.pump_on ? 1U : 0U,
+            water_fsm_output.buzzer_on ? 1U : 0U,
+            Fsm_GetErrorName(water_fsm_output.error),
+            (unsigned long)Ultrasonic_GetEchoTimeUs(),
+            filter_valid ? 1U : 0U,
+            Filter_IsReady(&water_level_filter) ? 1U : 0U,
+            (unsigned int)Filter_GetSampleCount(&water_level_filter)
+        );
+    }
+
+    status = Ultrasonic_GetStatus();
+    if (((status == ULTRASONIC_STATUS_TIMEOUT) ||
+         (status == ULTRASONIC_STATUS_ERROR)) &&
+        (status != ultrasonic_last_reported_status))
+    {
+        FsmInput_t fsm_input = {
+            Filter_GetWaterLevelPercent(&water_level_filter),
+            false,
+            false,
+            now_ms
+        };
+
+        water_fsm_output = Fsm_Update(&fsm_input);
+        Apply_Fsm_Output(&water_fsm_output);
+
+        OLED_ShowLevel(-1.0f);
+        OLED_ShowStatus(Fsm_GetErrorName(water_fsm_output.error));
+
+        Logger_Printf(
+            "WATER | sensor=%s | state=%s | pump=%u buzzer=%u error=%s\r\n",
+            Ultrasonic_GetStatusName(status),
+            Fsm_GetStateName(water_fsm_output.state),
+            water_fsm_output.pump_on ? 1U : 0U,
+            water_fsm_output.buzzer_on ? 1U : 0U,
+            Fsm_GetErrorName(water_fsm_output.error)
+        );
+        ultrasonic_last_reported_status = status;
+    }
+
+    if (!Ultrasonic_IsBusy() &&
+        ((uint32_t)(now_ms - ultrasonic_last_sample_ms) >=
+         ULTRASONIC_SAMPLE_PERIOD_MS))
+    {
+        ultrasonic_last_sample_ms = now_ms;
+
+        if (Ultrasonic_Start())
+        {
+            ultrasonic_last_reported_status = ULTRASONIC_STATUS_WAIT_RISING;
+        }
+        else
+        {
+            Logger_Printf(
+                "US START FAIL | status=%s\r\n",
+                Ultrasonic_GetStatusName(Ultrasonic_GetStatus())
+            );
+        }
+    }
+}
+#endif
+
+static void Buzzer_Test_Run(void)
+{
+#if RUN_BUZZER_STARTUP_TEST
+    Logger_Print("\r\nBuzzer test started\r\n");
+
+    for (uint8_t i = 0U; i < 3U; i++)
+    {
+        Buzzer_On();
+        Logger_Printf(
+            "Buzzer T%02u ON\r\n",
+            (unsigned int)(i + 1U)
+        );
+        HAL_Delay(150);
+
+        Buzzer_Off();
+        Logger_Printf(
+            "Buzzer T%02u OFF\r\n",
+            (unsigned int)(i + 1U)
+        );
+        HAL_Delay(150);
+    }
+
+    Logger_Print("Buzzer test done\r\n\r\n");
+#else
+    Buzzer_Off();
+#endif
+}
+
+#if !RUN_ULTRASONIC_UART_TEST
+static void Apply_Fsm_Output(const FsmOutput_t *output)
+{
+    if (output == NULL)
+    {
+        Relay_Off();
+        Buzzer_Set(false);
+        return;
+    }
+
+    if (output->pump_on)
+    {
+        Relay_On();
+    }
+    else
+    {
+        Relay_Off();
+    }
+
+    Buzzer_Set(output->buzzer_on);
+}
+#endif
 
 /* USER CODE END 4 */
 

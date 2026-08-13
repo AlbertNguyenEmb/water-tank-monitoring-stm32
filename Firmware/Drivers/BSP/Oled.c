@@ -11,6 +11,11 @@ static bool oled_initialized = false;
 static float oled_level = -1.0f;
 static char oled_status[16] = "INIT";
 
+void OLED_SetI2CAddress(uint8_t address_7bit)
+{
+    ssd1306_SetI2CAddress((uint16_t)(address_7bit << 1));
+}
+
 static void OLED_FormatLevel(
     char *buffer,
     uint16_t buffer_size,
@@ -106,9 +111,14 @@ static void OLED_Render(void)
     ssd1306_UpdateScreen();
 }
 
-void OLED_Init(void)
+bool OLED_Init(void)
 {
-    ssd1306_Init();
+    oled_initialized = false;
+
+    if (ssd1306_Init() != SSD1306_OK)
+    {
+        return false;
+    }
 
     oled_level = -1.0f;
 
@@ -123,6 +133,8 @@ void OLED_Init(void)
     oled_initialized = true;
 
     OLED_Render();
+
+    return true;
 }
 
 void OLED_ShowLevel(float level)
@@ -147,4 +159,90 @@ void OLED_ShowStatus(const char *st)
     oled_status[sizeof(oled_status) - 1U] = '\0';
 
     OLED_Render();
+}
+
+void OLED_ShowUltrasonicTest(
+    uint32_t sample,
+    float distance_cm,
+    const char *status,
+    bool distance_valid
+)
+{
+    char sample_line[22];
+    char distance_line[22];
+    char status_line[22];
+
+    if (!oled_initialized)
+    {
+        return;
+    }
+
+    if (status == NULL)
+    {
+        status = "UNKNOWN";
+    }
+
+    snprintf(
+        sample_line,
+        sizeof(sample_line),
+        "SAMPLE:%lu",
+        (unsigned long)sample
+    );
+
+    if (distance_valid)
+    {
+        snprintf(
+            distance_line,
+            sizeof(distance_line),
+            "DIST:%6.2f cm",
+            distance_cm
+        );
+    }
+    else
+    {
+        snprintf(
+            distance_line,
+            sizeof(distance_line),
+            "DIST:ERROR"
+        );
+    }
+
+    snprintf(
+        status_line,
+        sizeof(status_line),
+        "ST:%-15.15s",
+        status
+    );
+
+    ssd1306_Fill(Black);
+
+    ssd1306_SetCursor(0, 0);
+    ssd1306_WriteString(
+        "ULTRASONIC TEST",
+        Font_7x10,
+        White
+    );
+
+    ssd1306_SetCursor(0, 12);
+    ssd1306_WriteString(
+        sample_line,
+        Font_7x10,
+        White
+    );
+
+    ssd1306_SetCursor(0, 24);
+    ssd1306_WriteString(
+        distance_line,
+        Font_7x10,
+        White
+    );
+
+    ssd1306_SetCursor(0, 36);
+    ssd1306_WriteString(
+        status_line,
+        Font_7x10,
+        White
+    );
+
+    ssd1306_UpdateScreen();
 }
