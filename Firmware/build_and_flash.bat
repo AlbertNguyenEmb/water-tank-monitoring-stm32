@@ -2,11 +2,11 @@
 setlocal
 
 echo ===============================================
-echo Building STM32F103 AHT20 Baremetal Project
+echo Building STM32F103 Water Tank Monitor Project
 echo ===============================================
 
-REM Change to project directory
-cd /d C:\embedded\STM32_PROJECT\Classic_with_CMake\full_baremetal
+REM Change to this script's directory
+cd /d "%~dp0"
 
 REM Clean build directory (using batch commands, not PowerShell)
 if exist build (

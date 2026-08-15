@@ -28,9 +28,6 @@
 #define SSD1306_I2C_PORT        hi2c1
 #define SSD1306_I2C_ADDR        (0x3C << 1)
 
-// Enable this only for SH1106 OLED modules.
-// #define SSD1306_CONTROLLER_SH1106
-
 // SPI Configuration
 //#define SSD1306_SPI_PORT        hspi1
 //#define SSD1306_CS_Port         OLED_CS_GPIO_Port
@@ -59,17 +56,15 @@
 
 // The width of the screen can be set using this
 // define. The default value is 128.
-#define SSD1306_WIDTH           128
+// #define SSD1306_WIDTH           64
 
 // If your screen horizontal axis does not start
 // in column 0 you can use this define to
 // adjust the horizontal offset
-#ifdef SSD1306_CONTROLLER_SH1106
-#define SSD1306_X_OFFSET        2
-#endif
+// #define SSD1306_X_OFFSET
 
 // The height can be changed as well if necessary.
 // It can be 32, 64 or 128. The default value is 64.
-#define SSD1306_HEIGHT          64
+// #define SSD1306_HEIGHT          64
 
 #endif /* __SSD1306_CONF_H__ */

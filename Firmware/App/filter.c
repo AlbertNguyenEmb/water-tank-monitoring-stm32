@@ -57,8 +57,10 @@ void Filter_Reset(DistanceFilter_t *filter)
     filter->sum = 0.0f;
     filter->filtered_distance_cm = 0.0f;
     filter->water_level_percent = 0.0f;
+    filter->pending_outlier_cm = 0.0f;
     filter->index = 0U;
     filter->count = 0U;
+    filter->outlier_count = 0U;
 }
 
 bool Filter_SetTankHeightCm(DistanceFilter_t *filter, float tank_height_cm)
@@ -98,26 +100,26 @@ bool Filter_Update(
         return false;
     }
 
-    if (filter->count < FILTER_WINDOW_SIZE)
+    if (filter->count == 0U)
     {
-        filter->samples[filter->index] = distance_cm;
-        filter->sum += distance_cm;
-        filter->count++;
+        filter->filtered_distance_cm = distance_cm;
+        filter->count = 1U;
     }
     else
     {
-        filter->sum -= filter->samples[filter->index];
-        filter->samples[filter->index] = distance_cm;
-        filter->sum += distance_cm;
+        filter->filtered_distance_cm =
+            (FILTER_EMA_ALPHA * distance_cm) +
+            ((1.0f - FILTER_EMA_ALPHA) * filter->filtered_distance_cm);
+
+        if (filter->count < FILTER_WINDOW_SIZE)
+        {
+            filter->count++;
+        }
     }
 
-    filter->index++;
-    if (filter->index >= FILTER_WINDOW_SIZE)
-    {
-        filter->index = 0U;
-    }
+    filter->pending_outlier_cm = 0.0f;
+    filter->outlier_count = 0U;
 
-    filter->filtered_distance_cm = filter->sum / (float)filter->count;
     filter->water_level_percent = Filter_DistanceToWaterLevelPercent(
         filter->filtered_distance_cm,
         filter->tank_height_cm

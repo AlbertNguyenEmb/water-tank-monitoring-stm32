@@ -40,7 +40,7 @@ static bool Ultrasonic_WaitEchoState(GPIO_PinState state, uint32_t timeout_us)
 
     Ultrasonic_StartUsCounter();
 
-    while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != state)
+    while (HAL_GPIO_ReadPin(ULTRASONIC_ECHO_PORT, ULTRASONIC_ECHO_PIN) != state)
     {
         if (Ultrasonic_HasTimedOutUs(timeout_us))
         {
@@ -118,6 +118,8 @@ static void Ultrasonic_SendTriggerPulse(void)
 
 void Ultrasonic_Init(void)
 {
+    (void)HAL_TIM_Base_Start(&ULTRASONIC_ECHO_TIMER);
+
     HAL_GPIO_WritePin(
         ULTRASONIC_TRIG_PORT,
         ULTRASONIC_TRIG_PIN,
@@ -199,8 +201,9 @@ void Ultrasonic_Process(void)
 
 bool Ultrasonic_MeasureDistanceCm(float *distance_cm)
 {
-    uint32_t started_ms;
+    uint32_t pulse_start_us;
     uint32_t echo_time_us;
+    uint32_t last_short_echo_us = 0U;
     float measured_distance_cm;
 
     if (distance_cm == 0)
@@ -220,55 +223,79 @@ bool Ultrasonic_MeasureDistanceCm(float *distance_cm)
     ultrasonic.echo_time_us = 0U;
     ultrasonic.status = ULTRASONIC_STATUS_WAIT_RISING;
 
-    if (!Ultrasonic_WaitEchoState(GPIO_PIN_RESET, 60000U))
+    if (!Ultrasonic_WaitEchoState(GPIO_PIN_RESET, ULTRASONIC_TIMEOUT_US))
     {
         ultrasonic.status = ULTRASONIC_STATUS_TIMEOUT;
         return false;
     }
 
     Ultrasonic_SendTriggerPulse();
+    Ultrasonic_StartUsCounter();
 
-    if (!Ultrasonic_WaitEchoState(GPIO_PIN_SET, 60000U))
+    while (!Ultrasonic_HasTimedOutUs(ULTRASONIC_TIMEOUT_US))
     {
-        ultrasonic.status = ULTRASONIC_STATUS_TIMEOUT;
-        return false;
-    }
+        ultrasonic.status = ULTRASONIC_STATUS_WAIT_RISING;
 
-    ultrasonic.status = ULTRASONIC_STATUS_WAIT_FALLING;
-    __HAL_TIM_SET_COUNTER(&ULTRASONIC_ECHO_TIMER, 0U);
-
-    started_ms = HAL_GetTick();
-    while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
-    {
-        if (Ultrasonic_HasTimedOutUs(60000U))
+        while (HAL_GPIO_ReadPin(ULTRASONIC_ECHO_PORT, ULTRASONIC_ECHO_PIN) == GPIO_PIN_RESET)
         {
-            ultrasonic.status = ULTRASONIC_STATUS_TIMEOUT;
+            if (Ultrasonic_HasTimedOutUs(ULTRASONIC_TIMEOUT_US))
+            {
+                ultrasonic.status =
+                    (last_short_echo_us > 0U) ?
+                    ULTRASONIC_STATUS_OUT_OF_RANGE :
+                    ULTRASONIC_STATUS_TIMEOUT;
+                ultrasonic.echo_time_us = last_short_echo_us;
+                return false;
+            }
+        }
+
+        pulse_start_us = __HAL_TIM_GET_COUNTER(&ULTRASONIC_ECHO_TIMER);
+        ultrasonic.status = ULTRASONIC_STATUS_WAIT_FALLING;
+
+        while (HAL_GPIO_ReadPin(ULTRASONIC_ECHO_PORT, ULTRASONIC_ECHO_PIN) == GPIO_PIN_SET)
+        {
+            if (Ultrasonic_HasTimedOutUs(ULTRASONIC_TIMEOUT_US))
+            {
+                ultrasonic.status = ULTRASONIC_STATUS_TIMEOUT;
+                ultrasonic.echo_time_us =
+                    __HAL_TIM_GET_COUNTER(&ULTRASONIC_ECHO_TIMER) - pulse_start_us;
+                return false;
+            }
+        }
+
+        echo_time_us = __HAL_TIM_GET_COUNTER(&ULTRASONIC_ECHO_TIMER) - pulse_start_us;
+        ultrasonic.echo_time_us = echo_time_us;
+
+#if (ULTRASONIC_MIN_STABLE_ECHO_US > 0U)
+        if (echo_time_us < ULTRASONIC_MIN_STABLE_ECHO_US)
+        {
+            last_short_echo_us = echo_time_us;
+            continue;
+        }
+#endif
+
+        measured_distance_cm = ((float)echo_time_us * 0.0343f) / 2.0f;
+
+        if (!Ultrasonic_IsValidDistance(measured_distance_cm))
+        {
+            ultrasonic.status = ULTRASONIC_STATUS_OUT_OF_RANGE;
             return false;
         }
 
-        if ((uint32_t)(HAL_GetTick() - started_ms) >= ULTRASONIC_TIMEOUT_MS)
-        {
-            ultrasonic.status = ULTRASONIC_STATUS_TIMEOUT;
-            return false;
-        }
+        ultrasonic.distance_cm = measured_distance_cm;
+        ultrasonic.status = ULTRASONIC_STATUS_DONE;
+        *distance_cm = measured_distance_cm;
+
+        return true;
     }
 
-    echo_time_us = __HAL_TIM_GET_COUNTER(&ULTRASONIC_ECHO_TIMER);
-    measured_distance_cm = ((float)echo_time_us * 0.0343f) / 2.0f;
+    ultrasonic.status =
+        (last_short_echo_us > 0U) ?
+        ULTRASONIC_STATUS_OUT_OF_RANGE :
+        ULTRASONIC_STATUS_TIMEOUT;
+    ultrasonic.echo_time_us = last_short_echo_us;
 
-    ultrasonic.echo_time_us = echo_time_us;
-
-    if (!Ultrasonic_IsValidDistance(measured_distance_cm))
-    {
-        ultrasonic.status = ULTRASONIC_STATUS_ERROR;
-        return false;
-    }
-
-    ultrasonic.distance_cm = measured_distance_cm;
-    ultrasonic.status = ULTRASONIC_STATUS_DONE;
-    *distance_cm = measured_distance_cm;
-
-    return true;
+    return false;
 }
 
 bool Ultrasonic_IsBusy(void)
@@ -328,6 +355,9 @@ const char *Ultrasonic_GetStatusName(UltrasonicStatus_t status)
 
     case ULTRASONIC_STATUS_TIMEOUT:
         return "TIMEOUT";
+
+    case ULTRASONIC_STATUS_OUT_OF_RANGE:
+        return "OUT_OF_RANGE";
 
     case ULTRASONIC_STATUS_ERROR:
         return "ERROR";
@@ -393,7 +423,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
         }
         else
         {
-            ultrasonic.status = ULTRASONIC_STATUS_ERROR;
+            ultrasonic.status = ULTRASONIC_STATUS_OUT_OF_RANGE;
         }
 
         Ultrasonic_StopCapture();

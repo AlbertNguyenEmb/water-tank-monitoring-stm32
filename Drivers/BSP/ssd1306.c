@@ -5,32 +5,18 @@
 
 #if defined(SSD1306_USE_I2C)
 
-static uint16_t SSD1306_CurrentI2CAddress = SSD1306_I2C_ADDR;
-
 void ssd1306_Reset(void) {
     /* for I2C - do nothing */
 }
 
-void ssd1306_SetI2CAddress(uint16_t address) {
-    SSD1306_CurrentI2CAddress = address;
-}
-
-static HAL_StatusTypeDef ssd1306_WriteCommandChecked(uint8_t byte) {
-    return HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_CurrentI2CAddress, 0x00, 1, &byte, 1, 100);
-}
-
-static HAL_StatusTypeDef ssd1306_WriteDataChecked(uint8_t* buffer, size_t buff_size) {
-    return HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_CurrentI2CAddress, 0x40, 1, buffer, buff_size, 100);
-}
-
 // Send a byte to the command register
 void ssd1306_WriteCommand(uint8_t byte) {
-    (void)ssd1306_WriteCommandChecked(byte);
+    HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x00, 1, &byte, 1, HAL_MAX_DELAY);
 }
 
 // Send data
 void ssd1306_WriteData(uint8_t* buffer, size_t buff_size) {
-    (void)ssd1306_WriteDataChecked(buffer, buff_size);
+    HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x40, 1, buffer, buff_size, HAL_MAX_DELAY);
 }
 
 #elif defined(SSD1306_USE_SPI)
@@ -44,10 +30,6 @@ void ssd1306_Reset(void) {
     HAL_Delay(10);
     HAL_GPIO_WritePin(SSD1306_Reset_Port, SSD1306_Reset_Pin, GPIO_PIN_SET);
     HAL_Delay(10);
-}
-
-void ssd1306_SetI2CAddress(uint16_t address) {
-    (void)address;
 }
 
 // Send a byte to the command register
@@ -88,77 +70,16 @@ SSD1306_Error_t ssd1306_FillBuffer(uint8_t* buf, uint32_t len) {
 }
 
 /* Initialize the oled screen */
-SSD1306_Error_t ssd1306_Init(void) {
+void ssd1306_Init(void) {
     // Reset OLED
     ssd1306_Reset();
 
     // Wait for the screen to boot
     HAL_Delay(100);
 
-#if defined(SSD1306_USE_I2C)
-    if (HAL_I2C_IsDeviceReady(&SSD1306_I2C_PORT, SSD1306_CurrentI2CAddress, 3, 100) != HAL_OK) {
-        SSD1306.Initialized = 0;
-        return SSD1306_ERR;
-    }
-#endif
-
     // Init OLED
     ssd1306_SetDisplayOn(0); //display off
 
-#ifdef SSD1306_CONTROLLER_SH1106
-    ssd1306_WriteCommand(0xD5); // Set display clock divide ratio/oscillator frequency
-    ssd1306_WriteCommand(0x80);
-
-    ssd1306_WriteCommand(0xA8); // Set multiplex ratio
-#if (SSD1306_HEIGHT == 32)
-    ssd1306_WriteCommand(0x1F);
-#elif (SSD1306_HEIGHT == 64)
-    ssd1306_WriteCommand(0x3F);
-#else
-#error "SH1106 mode supports 32 or 64 lines of height!"
-#endif
-
-    ssd1306_WriteCommand(0xD3); // Set display offset
-    ssd1306_WriteCommand(0x00);
-    ssd1306_WriteCommand(0x40); // Set display start line
-
-    ssd1306_WriteCommand(0xAD); // SH1106 DC-DC control
-    ssd1306_WriteCommand(0x8B);
-
-#ifdef SSD1306_MIRROR_HORIZ
-    ssd1306_WriteCommand(0xA0);
-#else
-    ssd1306_WriteCommand(0xA1);
-#endif
-
-#ifdef SSD1306_MIRROR_VERT
-    ssd1306_WriteCommand(0xC0);
-#else
-    ssd1306_WriteCommand(0xC8);
-#endif
-
-    ssd1306_WriteCommand(0xDA); // Set COM pins hardware configuration
-#if (SSD1306_HEIGHT == 32)
-    ssd1306_WriteCommand(0x02);
-#else
-    ssd1306_WriteCommand(0x12);
-#endif
-
-    ssd1306_SetContrast(0xFF);
-    ssd1306_WriteCommand(0xD9); // Set pre-charge period
-    ssd1306_WriteCommand(0x1F);
-    ssd1306_WriteCommand(0xDB); // Set VCOMH
-    ssd1306_WriteCommand(0x40);
-    ssd1306_WriteCommand(0xA4); // Output follows RAM content
-
-#ifdef SSD1306_INVERSE_COLOR
-    ssd1306_WriteCommand(0xA7);
-#else
-    ssd1306_WriteCommand(0xA6);
-#endif
-
-    ssd1306_SetDisplayOn(1);
-#else
     ssd1306_WriteCommand(0x20); //Set Memory Addressing Mode
     ssd1306_WriteCommand(0x00); // 00b,Horizontal Addressing Mode; 01b,Vertical Addressing Mode;
                                 // 10b,Page Addressing Mode (RESET); 11b,Invalid
@@ -236,7 +157,6 @@ SSD1306_Error_t ssd1306_Init(void) {
     ssd1306_WriteCommand(0x8D); //--set DC-DC enable
     ssd1306_WriteCommand(0x14); //
     ssd1306_SetDisplayOn(1); //--turn on SSD1306 panel
-#endif
 
     // Clear screen
     ssd1306_Fill(Black);
@@ -249,8 +169,6 @@ SSD1306_Error_t ssd1306_Init(void) {
     SSD1306.CurrentY = 0;
     
     SSD1306.Initialized = 1;
-
-    return SSD1306_OK;
 }
 
 /* Fill the whole screen with the given color */

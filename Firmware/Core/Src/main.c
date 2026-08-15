@@ -13,9 +13,11 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
+#include "filter.h"
 #include "logger.h"
-#include "oled.h"
+#include "Oled.h"
 #include "relay.h"
+#include "ultrasonic.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -28,7 +30,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define WATER_TANK_HEIGHT_CM        50.0f
+#define WATER_TANK_SAMPLE_DELAY_MS  200U
+#define OLED_INIT_RETRY_COUNT       3U
+#define OLED_INIT_RETRY_DELAY_MS    100U
+#define OLED_RETRY_PERIOD_SAMPLES   100U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -38,7 +44,9 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-
+static DistanceFilter_t distance_filter;
+static uint32_t sample_count = 0U;
+static bool oled_ready = false;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -50,7 +58,32 @@ void I2C_Scan(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#ifdef ULTRASONIC_ECHO_TIMER
+#define App_UltrasonicReadDistance(distance_cm) \
+    Ultrasonic_MeasureDistanceCm(distance_cm)
+#define App_UltrasonicGetEchoTimeUs() \
+    Ultrasonic_GetEchoTimeUs()
+#else
+#define App_UltrasonicReadDistance(distance_cm) \
+    Ultrasonic_ReadDistance(distance_cm)
+#define App_UltrasonicGetEchoTimeUs() \
+    0U
+#endif
 
+static bool App_InitOledWithRetry(void)
+{
+    for (uint8_t attempt = 0U; attempt < OLED_INIT_RETRY_COUNT; attempt++)
+    {
+        if (OLED_Init())
+        {
+            return true;
+        }
+
+        HAL_Delay(OLED_INIT_RETRY_DELAY_MS);
+    }
+
+    return false;
+}
 /* USER CODE END 0 */
 
 /**
@@ -74,18 +107,119 @@ int main(void)
     MX_TIM3_Init();
     MX_USART1_UART_Init();
 
-    Logger_Print("Relay Test Started\r\n");
+    Relay_Off();
+
+    Logger_Print("===== WATER TANK TEST =====\r\n");
+    I2C_Scan();
+
+    HAL_Delay(100U);
+
+    oled_ready = App_InitOledWithRetry();
+    if (!oled_ready)
+    {
+        Logger_Print("OLED INIT FAILED!\r\n");
+    }
+    else
+    {
+        Logger_Print("OLED INIT OK!\r\n");
+    }
+
+    Ultrasonic_Init();
+    Filter_Init(&distance_filter);
+    (void)Filter_SetTankHeightCm(
+        &distance_filter,
+        WATER_TANK_HEIGHT_CM
+    );
+
+    if (oled_ready)
+    {
+        OLED_ShowLevel(-1.0f);
+        OLED_ShowStatus("START");
+    }
 
     /* Infinite loop --------------------------------------------------------*/
     while (1)
     {
+        float raw_distance_cm = 0.0f;
+        float filtered_distance_cm = 0.0f;
+        float water_level_percent = 0.0f;
 
+        sample_count++;
 
-        HAL_Delay(2000);
+        if (!oled_ready && ((sample_count % OLED_RETRY_PERIOD_SAMPLES) == 0U))
+        {
+            oled_ready = App_InitOledWithRetry();
+            Logger_Print(oled_ready ? "OLED RETRY OK\r\n" : "OLED RETRY FAILED\r\n");
+        }
 
-        Relay_Toggle();
+        if (App_UltrasonicReadDistance(&raw_distance_cm))
+        {
+            if (Filter_UpdateWaterLevel(
+                    &distance_filter,
+                    raw_distance_cm,
+                    &filtered_distance_cm,
+                    &water_level_percent))
+            {
+                Logger_Printf(
+                    "Sample:%lu | ECHO=%lu us | RAW=%.1f cm | FILTER=%.1f cm | LEVEL=%.1f %%\r\n",
+                    (unsigned long)sample_count,
+                    (unsigned long)App_UltrasonicGetEchoTimeUs(),
+                    raw_distance_cm,
+                    filtered_distance_cm,
+                    water_level_percent
+                );
 
-        HAL_Delay(2000);
+                if (oled_ready)
+                {
+                    OLED_ShowLevel(water_level_percent);
+                    OLED_ShowStatus(Filter_IsReady(&distance_filter) ? "LEVEL OK" : "WARMUP");
+                }
+            }
+            else
+            {
+                Logger_Printf(
+                    "Sample:%lu | FILTER REJECT | ECHO=%lu us | RAW=%.1f cm\r\n",
+                    (unsigned long)sample_count,
+                    (unsigned long)App_UltrasonicGetEchoTimeUs(),
+                    raw_distance_cm
+                );
+            }
+        }
+        else
+        {
+#ifdef ULTRASONIC_ECHO_TIMER
+            Logger_Printf(
+                "Sample:%lu | ULTRASONIC %s | ECHO=%lu us\r\n",
+                (unsigned long)sample_count,
+                Ultrasonic_GetStatusName(Ultrasonic_GetStatus()),
+                (unsigned long)Ultrasonic_GetEchoTimeUs()
+            );
+#else
+            Logger_Printf(
+                "Sample:%lu | ULTRASONIC ERROR\r\n",
+                (unsigned long)sample_count
+            );
+#endif
+
+            if (Filter_GetSampleCount(&distance_filter) > 0U)
+            {
+                if (oled_ready)
+                {
+                    OLED_ShowLevel(Filter_GetWaterLevelPercent(&distance_filter));
+                    OLED_ShowStatus("US RETRY");
+                }
+            }
+            else
+            {
+                if (oled_ready)
+                {
+                    OLED_ShowLevel(-1.0f);
+                    OLED_ShowStatus("US ERROR");
+                }
+            }
+        }
+
+        HAL_Delay(WATER_TANK_SAMPLE_DELAY_MS);
     }
 }
 

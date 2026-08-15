@@ -5,10 +5,13 @@
 #include <stdint.h>
 
 #define FILTER_WINDOW_SIZE        5U
-#define FILTER_MIN_DISTANCE_CM    2.0f
-#define FILTER_MAX_DISTANCE_CM    400.0f
-#define FILTER_DEFAULT_TANK_HEIGHT_CM    100.0f
+#define FILTER_MIN_DISTANCE_CM    0.0f
+#define FILTER_MAX_DISTANCE_CM    50.0f
+#define FILTER_DEFAULT_TANK_HEIGHT_CM    50.0f
 #define FILTER_MIN_TANK_HEIGHT_CM        1.0f
+#define FILTER_EMA_ALPHA                 0.75f
+#define FILTER_OUTLIER_DELTA_CM          18.0f
+#define FILTER_OUTLIER_ACCEPT_COUNT      3U
 
 typedef struct
 {
@@ -17,8 +20,10 @@ typedef struct
     float filtered_distance_cm;
     float water_level_percent;
     float tank_height_cm;
+    float pending_outlier_cm;
     uint8_t index;
     uint8_t count;
+    uint8_t outlier_count;
 } DistanceFilter_t;
 
 void Filter_Init(DistanceFilter_t *filter);

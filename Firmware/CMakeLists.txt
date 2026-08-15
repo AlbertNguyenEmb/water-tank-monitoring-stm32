@@ -39,9 +39,11 @@ file(GLOB_RECURSE CORE_SRC
     "${CMAKE_SOURCE_DIR}/Core/Src/*.c"
 )
 
-# Tầng Application (App logic, State Machine, Controller)
-file(GLOB_RECURSE APP_SRC
-    "${CMAKE_SOURCE_DIR}/App/*.c"
+# Tầng Application đang dùng cho bản HC-SR04.
+# Các file app.c/control.c/fsm.c là nhánh cũ dùng water_sensor ADC, không build ở target này.
+set(APP_SRC
+    "${CMAKE_SOURCE_DIR}/App/filter.c"
+    "${CMAKE_SOURCE_DIR}/App/fsm_logic.c"
 )
 
 # Tầng Drivers BSP (Relay, Buzzer, LCD, Water Sensor, v.v.)
@@ -49,9 +51,10 @@ file(GLOB_RECURSE BSP_SRC
     "${CMAKE_SOURCE_DIR}/Drivers/BSP/*.c"
 )
 
-# Tầng Middleware (Filter, Logger, DSP, v.v.)
-file(GLOB_RECURSE MIDDLEWARE_SRC
-    "${CMAKE_SOURCE_DIR}/Middleware/*.c"
+# Tầng Middleware.
+# Middleware/filter.c là nhánh cũ cho ADC water_sensor, tránh build trùng symbol với App/filter.c.
+set(MIDDLEWARE_SRC
+    "${CMAKE_SOURCE_DIR}/Middleware/logger.c"
 )
 
 # Tầng HAL Driver & CMSIS 

@@ -2,9 +2,8 @@
 #define LOGGER_H
 
 void Logger_Init(void);
-
 void Logger_Print(const char *message);
-
 void Logger_Printf(const char *format, ...);
+void Logger_Run(void);
 
-#endif
+#endif /* LOGGER_H */

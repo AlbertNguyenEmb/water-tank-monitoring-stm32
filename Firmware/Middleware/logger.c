@@ -1,48 +1,71 @@
 #include "logger.h"
 #include "main.h"
 
-#include <stdio.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 extern UART_HandleTypeDef huart1;
 
 void Logger_Init(void)
 {
-    // UART1 đã được khởi tạo bởi CubeMX.
+    /* UART1 is initialized by CubeMX before the logger is used. */
 }
 
 void Logger_Print(const char *message)
 {
-    HAL_UART_Transmit(
+    if (message == 0)
+    {
+        return;
+    }
+
+    (void)HAL_UART_Transmit(
         &huart1,
         (uint8_t *)message,
-        strlen(message),
+        (uint16_t)strlen(message),
         HAL_MAX_DELAY
     );
 }
 
 void Logger_Printf(const char *format, ...)
 {
-    char buffer[128];
-
+    char buffer[160];
     va_list args;
+    int length;
+
+    if (format == 0)
+    {
+        return;
+    }
 
     va_start(args, format);
-
-    vsnprintf(
+    length = vsnprintf(
         buffer,
         sizeof(buffer),
         format,
         args
     );
-
     va_end(args);
 
-    HAL_UART_Transmit(
+    if (length <= 0)
+    {
+        return;
+    }
+
+    if ((uint32_t)length >= sizeof(buffer))
+    {
+        length = (int)sizeof(buffer) - 1;
+    }
+
+    (void)HAL_UART_Transmit(
         &huart1,
         (uint8_t *)buffer,
-        strlen(buffer),
+        (uint16_t)length,
         HAL_MAX_DELAY
     );
+}
+
+void Logger_Run(void)
+{
+    /* Kept as a no-op for legacy modules that may still call Logger_Run(). */
 }
