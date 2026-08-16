@@ -160,13 +160,32 @@ float Filter_DistanceToWaterLevelPercent(
 )
 {
     float percent;
+    float usable_height_cm;
 
     if (!Filter_IsValidTankHeight(tank_height_cm))
     {
         return 0.0f;
     }
 
-    percent = ((tank_height_cm - filtered_distance_cm) * 100.0f) / tank_height_cm;
+    if (filtered_distance_cm <= FILTER_FULL_DISTANCE_CM)
+    {
+        return 100.0f;
+    }
+
+    if (filtered_distance_cm >= tank_height_cm)
+    {
+        return 0.0f;
+    }
+
+    usable_height_cm = tank_height_cm - FILTER_FULL_DISTANCE_CM;
+    if (usable_height_cm <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    percent =
+        ((tank_height_cm - filtered_distance_cm) * 100.0f) /
+        usable_height_cm;
 
     return Filter_ClampPercent(percent);
 }

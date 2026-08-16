@@ -7,6 +7,7 @@
 #define FILTER_WINDOW_SIZE        5U
 #define FILTER_MIN_DISTANCE_CM    0.0f
 #define FILTER_MAX_DISTANCE_CM    50.0f
+#define FILTER_FULL_DISTANCE_CM   3.0f
 #define FILTER_DEFAULT_TANK_HEIGHT_CM    50.0f
 #define FILTER_MIN_TANK_HEIGHT_CM        1.0f
 #define FILTER_EMA_ALPHA                 0.75f
