@@ -116,8 +116,26 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
     switch (fsm.state)
     {
     case FSM_STATE_INIT:
+{
+    if (!input->sensor_ok)
+    {
+        Fsm_EnterError(FSM_ERROR_SENSOR, input->now_ms);
+    }
+    else if (input->water_level_percent >= fsm.config.overflow_percent)
+    {
+        Fsm_EnterState(FSM_STATE_OVERFLOW, input->now_ms);
+    }
+    else if (input->water_level_percent <= fsm.config.low_level_percent)
+    {
+        Fsm_EnterState(FSM_STATE_FILLING, input->now_ms);
+    }
+    else
+    {
         Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
-        break;
+    }
+
+    break;
+}
 
     case FSM_STATE_MONITORING:
         if (!input->sensor_ok)
@@ -135,19 +153,26 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
         break;
 
     case FSM_STATE_FILLING:
-        if (!input->sensor_ok)
-        {
-            Fsm_EnterError(FSM_ERROR_SENSOR, input->now_ms);
-        }
-        else if (input->water_level_percent >= fsm.config.fill_stop_percent)
-        {
-            Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
-        }
-        else if (Fsm_HasTimedOut(input->now_ms, fsm.config.fill_timeout_ms))
-        {
-            Fsm_EnterError(FSM_ERROR_FILL_TIMEOUT, input->now_ms);
-        }
-        break;
+{
+    if (!input->sensor_ok)
+    {
+        Fsm_EnterError(FSM_ERROR_SENSOR, input->now_ms);
+    }
+    else if (input->water_level_percent >= fsm.config.overflow_percent)
+    {
+        Fsm_EnterState(FSM_STATE_OVERFLOW, input->now_ms);
+    }
+    else if (input->water_level_percent >= fsm.config.fill_stop_percent)
+    {
+        Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
+    }
+    else if (Fsm_HasTimedOut(input->now_ms, fsm.config.fill_timeout_ms))
+    {
+        Fsm_EnterError(FSM_ERROR_FILL_TIMEOUT, input->now_ms);
+    }
+
+    break;
+}
 
     case FSM_STATE_OVERFLOW:
         if (!input->sensor_ok)
@@ -161,12 +186,24 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
         break;
 
     case FSM_STATE_ERROR:
-        if (input->user_reset ||
-            ((fsm.error == FSM_ERROR_SENSOR) && input->sensor_ok))
+{
+    if (fsm.error == FSM_ERROR_SENSOR)
+    {
+        if (input->sensor_ok)
         {
             Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
         }
-        break;
+    }
+    else if (fsm.error == FSM_ERROR_FILL_TIMEOUT)
+    {
+        if (input->user_reset && input->sensor_ok)
+        {
+            Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
+        }
+    }
+
+    break;
+}
 
     default:
         Fsm_Init();
