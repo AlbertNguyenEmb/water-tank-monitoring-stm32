@@ -9,6 +9,7 @@ typedef enum
     FSM_STATE_INIT = 0,
     FSM_STATE_MONITORING,
     FSM_STATE_FILLING,
+    FSM_STATE_FULL,
     FSM_STATE_OVERFLOW,
     FSM_STATE_ERROR
 } FsmState_t;

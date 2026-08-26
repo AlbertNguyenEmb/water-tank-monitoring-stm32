@@ -46,7 +46,7 @@ set(APP_SRC
     "${CMAKE_SOURCE_DIR}/App/fsm_logic.c"
 )
 
-# Tầng Drivers BSP (Relay, Buzzer, LCD, Water Sensor, v.v.)
+# Tầng Drivers BSP (L298N, Buzzer, LCD, Water Sensor, v.v.)
 file(GLOB_RECURSE BSP_SRC
     "${CMAKE_SOURCE_DIR}/Drivers/BSP/*.c"
 )

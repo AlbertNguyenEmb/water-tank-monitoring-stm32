@@ -15,12 +15,40 @@ void ssd1306_SetI2CAddress(uint16_t address) {
     SSD1306_CurrentI2CAddress = address;
 }
 
+static HAL_StatusTypeDef ssd1306_I2CWriteWithRetry(
+    uint16_t memory_address,
+    uint8_t *buffer,
+    size_t size
+) {
+    HAL_StatusTypeDef status = HAL_ERROR;
+
+    for (uint8_t attempt = 0U; attempt < 3U; ++attempt) {
+        status = HAL_I2C_Mem_Write(
+            &SSD1306_I2C_PORT,
+            SSD1306_CurrentI2CAddress,
+            memory_address,
+            1,
+            buffer,
+            (uint16_t)size,
+            100
+        );
+
+        if (status == HAL_OK) {
+            return HAL_OK;
+        }
+
+        HAL_Delay(1U);
+    }
+
+    return status;
+}
+
 static HAL_StatusTypeDef ssd1306_WriteCommandChecked(uint8_t byte) {
-    return HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_CurrentI2CAddress, 0x00, 1, &byte, 1, 100);
+    return ssd1306_I2CWriteWithRetry(0x00, &byte, 1);
 }
 
 static HAL_StatusTypeDef ssd1306_WriteDataChecked(uint8_t* buffer, size_t buff_size) {
-    return HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_CurrentI2CAddress, 0x40, 1, buffer, buff_size, 100);
+    return ssd1306_I2CWriteWithRetry(0x40, buffer, buff_size);
 }
 
 // Send a byte to the command register

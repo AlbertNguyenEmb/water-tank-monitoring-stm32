@@ -50,6 +50,26 @@ static bool Fsm_HasTimedOut(uint32_t now_ms, uint32_t timeout_ms)
     return ((uint32_t)(now_ms - fsm.state_entered_at_ms) >= timeout_ms);
 }
 
+static FsmState_t Fsm_ClassifyLevel(float water_level_percent)
+{
+    if (water_level_percent >= fsm.config.overflow_percent)
+    {
+        return FSM_STATE_OVERFLOW;
+    }
+
+    if (water_level_percent >= fsm.config.fill_stop_percent)
+    {
+        return FSM_STATE_FULL;
+    }
+
+    if (water_level_percent <= fsm.config.low_level_percent)
+    {
+        return FSM_STATE_FILLING;
+    }
+
+    return FSM_STATE_MONITORING;
+}
+
 static void Fsm_EnterError(FsmError_t error, uint32_t now_ms)
 {
     fsm.error = error;
@@ -78,6 +98,7 @@ static FsmOutput_t Fsm_BuildOutput(void)
 
     case FSM_STATE_INIT:
     case FSM_STATE_MONITORING:
+    case FSM_STATE_FULL:
     default:
         break;
     }
@@ -121,17 +142,10 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
     {
         Fsm_EnterError(FSM_ERROR_SENSOR, input->now_ms);
     }
-    else if (input->water_level_percent >= fsm.config.overflow_percent)
-    {
-        Fsm_EnterState(FSM_STATE_OVERFLOW, input->now_ms);
-    }
-    else if (input->water_level_percent <= fsm.config.low_level_percent)
-    {
-        Fsm_EnterState(FSM_STATE_FILLING, input->now_ms);
-    }
     else
     {
-        Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
+        Fsm_EnterState(Fsm_ClassifyLevel(input->water_level_percent),
+                       input->now_ms);
     }
 
     break;
@@ -150,6 +164,10 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
         {
             Fsm_EnterState(FSM_STATE_FILLING, input->now_ms);
         }
+        else if (input->water_level_percent >= fsm.config.fill_stop_percent)
+        {
+            Fsm_EnterState(FSM_STATE_FULL, input->now_ms);
+        }
         break;
 
     case FSM_STATE_FILLING:
@@ -158,13 +176,9 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
     {
         Fsm_EnterError(FSM_ERROR_SENSOR, input->now_ms);
     }
-    else if (input->water_level_percent >= fsm.config.overflow_percent)
-    {
-        Fsm_EnterState(FSM_STATE_OVERFLOW, input->now_ms);
-    }
     else if (input->water_level_percent >= fsm.config.fill_stop_percent)
     {
-        Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
+        Fsm_EnterState(FSM_STATE_FULL, input->now_ms);
     }
     else if (Fsm_HasTimedOut(input->now_ms, fsm.config.fill_timeout_ms))
     {
@@ -174,6 +188,21 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
     break;
 }
 
+    case FSM_STATE_FULL:
+        if (!input->sensor_ok)
+        {
+            Fsm_EnterError(FSM_ERROR_SENSOR, input->now_ms);
+        }
+        else if (input->water_level_percent >= fsm.config.overflow_percent)
+        {
+            Fsm_EnterState(FSM_STATE_OVERFLOW, input->now_ms);
+        }
+        else if (input->water_level_percent <= fsm.config.low_level_percent)
+        {
+            Fsm_EnterState(FSM_STATE_FILLING, input->now_ms);
+        }
+        break;
+
     case FSM_STATE_OVERFLOW:
         if (!input->sensor_ok)
         {
@@ -181,7 +210,7 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
         }
         else if (input->water_level_percent <= fsm.config.overflow_clear_percent)
         {
-            Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
+            Fsm_EnterState(FSM_STATE_FULL, input->now_ms);
         }
         break;
 
@@ -191,14 +220,16 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
     {
         if (input->sensor_ok)
         {
-            Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
+            Fsm_EnterState(Fsm_ClassifyLevel(input->water_level_percent),
+                           input->now_ms);
         }
     }
     else if (fsm.error == FSM_ERROR_FILL_TIMEOUT)
     {
         if (input->user_reset && input->sensor_ok)
         {
-            Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
+            Fsm_EnterState(Fsm_ClassifyLevel(input->water_level_percent),
+                           input->now_ms);
         }
     }
 
@@ -207,7 +238,8 @@ FsmOutput_t Fsm_Update(const FsmInput_t *input)
 
     default:
         Fsm_Init();
-        Fsm_EnterState(FSM_STATE_MONITORING, input->now_ms);
+        Fsm_EnterState(Fsm_ClassifyLevel(input->water_level_percent),
+                       input->now_ms);
         break;
     }
 
@@ -236,6 +268,9 @@ const char *Fsm_GetStateName(FsmState_t state)
 
     case FSM_STATE_FILLING:
         return "FILLING";
+
+    case FSM_STATE_FULL:
+        return "FULL";
 
     case FSM_STATE_OVERFLOW:
         return "OVERFLOW";

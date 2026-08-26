@@ -1,7 +1,7 @@
 #include "app.h"
 
 /* BSP (Drivers/BSP) */
-#include "relay.h"
+#include "ln298n.h"
 #include "water_sensor.h"
 #include "oled.h"
 #include "buzzer.h"
@@ -17,7 +17,7 @@
 void App_Init(void)
 {
     /* 1) Khoi tao driver phan cung */
-    Relay_Init();
+    L298N_Init();
     WaterSensor_Init();
     OLED_Init();
 

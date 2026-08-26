@@ -1,4 +1,4 @@
-﻿/* USER CODE BEGIN Header */
+/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
   * @file           : main.c
@@ -6,110 +6,163 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
-
+/* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "i2c.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 #include "logger.h"
 #include "Oled.h"
-#include "relay.h"
+#include "ln298n.h"
 #include "buzzer.h"
-
 #include "filter.h"
 #include "fsm_logic.h"
 #include "ultrasonic.h"
 
-/* Private defines -----------------------------------------------------------*/
+#include <stdbool.h>
+
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
 #define WATER_TANK_HEIGHT_CM             40.0f
 #define ULTRASONIC_SAMPLE_PERIOD_MS      1000U
 
-/* Production integration mode. */
 #define RUN_STARTUP_SELF_TESTS           0U
 #define RUN_BUZZER_STARTUP_TEST          0U
 
-/* FSM configuration. */
 #define FSM_LOW_LEVEL_PERCENT            20.0f
 #define FSM_FILL_STOP_PERCENT            90.0f
 #define FSM_OVERFLOW_PERCENT             98.0f
 #define FSM_OVERFLOW_CLEAR_PERCENT       95.0f
 #define FSM_FILL_TIMEOUT_MS              120000U
 
-/* Sensor/filter behaviour. */
 #define FSM_REQUIRE_FILTER_READY         1U
 
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
 /* Private variables ---------------------------------------------------------*/
+
+/* USER CODE BEGIN PV */
 static DistanceFilter_t water_level_filter;
 static FsmOutput_t water_fsm_output;
 
 static uint32_t ultrasonic_last_sample_ms;
 static UltrasonicStatus_t ultrasonic_last_reported_status;
 
-/* Button PB5 -> reset FSM after an error.  Set from EXTI callback, consumed
- * in the main loop. */
 static volatile bool fsm_reset_request;
 static volatile uint32_t fsm_last_reset_button_ms;
 
+/* USER CODE END PV */
+
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
+/* USER CODE BEGIN PFP */
+static void WaterLevel_Init(void);
+static void WaterLevel_Task(void);
+static void Apply_Fsm_Output(const FsmOutput_t *output);
+static void Log_Fsm_Config(const FsmConfig_t *config);
 
 #if RUN_STARTUP_SELF_TESTS
 static void Filter_Test_Run(void);
 static void FSM_Test_Run(void);
 #endif
 
-static void WaterLevel_Init(void);
-static void WaterLevel_Task(void);
-static void Apply_Fsm_Output(const FsmOutput_t *output);
-static void Log_Fsm_Config(const FsmConfig_t *config);
+/* USER CODE END PFP */
 
-/* Application entry point ---------------------------------------------------*/
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
 int main(void)
 {
-    HAL_Init();
-    SystemClock_Config();
 
-    MX_GPIO_Init();
-    MX_I2C1_Init();
-    MX_TIM2_Init();
-    MX_TIM3_Init();
-    MX_USART1_UART_Init();
+  /* USER CODE BEGIN 1 */
 
-    Logger_Init();
-    Relay_Init();
-    Buzzer_Init();
+  /* USER CODE END 1 */
 
-    /* Safe startup outputs. */
-    Relay_Off();
-    Buzzer_Off();
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_TIM2_Init();
+  MX_TIM3_Init();
+  MX_USART1_UART_Init();
+  /* USER CODE BEGIN 2 */
+  Logger_Init();
+  L298N_Init();
+  Buzzer_Init();
+
+  L298N_Off();
+  Buzzer_Off();
 
 #if RUN_BUZZER_STARTUP_TEST
-    Buzzer_On();
-    HAL_Delay(150);
-    Buzzer_Off();
+  Buzzer_On();
+  HAL_Delay(150U);
+  Buzzer_Off();
 #endif
 
-    if (!OLED_Init())
-    {
-        Logger_Print("ERROR | OLED_Init failed; continuing without display\r\n");
-    }
+  if (!OLED_Init())
+  {
+    Logger_Print("ERROR | OLED_Init failed; continuing without display\r\n");
+  }
 
 #if RUN_STARTUP_SELF_TESTS
-    Filter_Test_Run();
-    FSM_Test_Run();
+  Filter_Test_Run();
+  FSM_Test_Run();
 #endif
 
-    WaterLevel_Init();
+  WaterLevel_Init();
 
-    Logger_Print("\r\n=== WATER TANK MONITOR START ===\r\n");
+  Logger_Print("\r\n=== WATER TANK MONITOR START ===\r\n");
 
-    while (1)
-    {
-        WaterLevel_Task();
-        HAL_Delay(5U);
-    }
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+    WaterLevel_Task();
+    HAL_Delay(5U);
+  }
+  /* USER CODE END 3 */
 }
 
 /**
@@ -118,36 +171,37 @@ int main(void)
   */
 void SystemClock_Config(void)
 {
-    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-    RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-    RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
-    RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-    RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
-    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-    {
-        Error_Handler();
-    }
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-    RCC_ClkInitStruct.ClockType =
-        RCC_CLOCKTYPE_HCLK |
-        RCC_CLOCKTYPE_SYSCLK |
-        RCC_CLOCKTYPE_PCLK1 |
-        RCC_CLOCKTYPE_PCLK2;
-    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-
-    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-    {
-        Error_Handler();
-    }
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
 
 /* USER CODE BEGIN 4 */
@@ -204,8 +258,7 @@ static void WaterLevel_Init(void)
     ultrasonic_last_reported_status = ULTRASONIC_STATUS_IDLE;
 
     Apply_Fsm_Output(&water_fsm_output);
-    OLED_ShowLevel(-1.0f);
-    OLED_ShowStatus("INIT");
+    OLED_ShowWaterState(-1.0f, "INIT");
 
     Logger_Printf(
         "US | TRIG=PA1 | ECHO=PA0 TIM2_CH1 | tank_height=%6.2f cm | period=%u ms\r\n",
@@ -257,8 +310,10 @@ static void WaterLevel_Task(void)
 
             water_fsm_output = Fsm_Update(&fsm_input);
             Apply_Fsm_Output(&water_fsm_output);
-            OLED_ShowLevel(water_level_percent);
-            OLED_ShowStatus(Fsm_GetStateName(water_fsm_output.state));
+            OLED_ShowWaterState(
+                water_level_percent,
+                Fsm_GetStateName(water_fsm_output.state)
+            );
         }
         else
         {
@@ -269,8 +324,7 @@ static void WaterLevel_Task(void)
                 false
             };
             Apply_Fsm_Output(&water_fsm_output);
-            OLED_ShowLevel(-1.0f);
-            OLED_ShowStatus("FILTERING");
+            OLED_ShowWaterState(-1.0f, "FILTERING");
         }
 #else
         FsmInput_t fsm_input = {
@@ -282,8 +336,10 @@ static void WaterLevel_Task(void)
 
         water_fsm_output = Fsm_Update(&fsm_input);
         Apply_Fsm_Output(&water_fsm_output);
-        OLED_ShowLevel(filter_valid ? water_level_percent : -1.0f);
-        OLED_ShowStatus(Fsm_GetStateName(water_fsm_output.state));
+        OLED_ShowWaterState(
+            filter_valid ? water_level_percent : -1.0f,
+            Fsm_GetStateName(water_fsm_output.state)
+        );
 #endif
 
         Logger_Printf(
@@ -327,8 +383,10 @@ static void WaterLevel_Task(void)
         water_fsm_output = Fsm_Update(&fsm_input);
         Apply_Fsm_Output(&water_fsm_output);
 
-        OLED_ShowLevel(-1.0f);
-        OLED_ShowStatus(Fsm_GetStateName(water_fsm_output.state));
+        OLED_ShowWaterState(
+            -1.0f,
+            Fsm_GetStateName(water_fsm_output.state)
+        );
 
         Logger_Printf(
             "SENSOR ERROR | status=%s | state=%s | pump=%u buzzer=%u | error=%s | reset=%u\r\n",
@@ -360,7 +418,10 @@ static void WaterLevel_Task(void)
 
         water_fsm_output = Fsm_Update(&fsm_input);
         Apply_Fsm_Output(&water_fsm_output);
-        OLED_ShowStatus(Fsm_GetStateName(water_fsm_output.state));
+        OLED_ShowWaterState(
+            water_level_percent,
+            Fsm_GetStateName(water_fsm_output.state)
+        );
 
         Logger_Printf(
             "FSM RESET | state=%s | pump=%u buzzer=%u | error=%s\r\n",
@@ -395,18 +456,18 @@ static void Apply_Fsm_Output(const FsmOutput_t *output)
 {
     if (output == NULL)
     {
-        Relay_Off();
+        L298N_Off();
         Buzzer_Off();
         return;
     }
 
     if (output->pump_on)
     {
-        Relay_On();
+        L298N_On();
     }
     else
     {
-        Relay_Off();
+        L298N_Off();
     }
 
     Buzzer_Set(output->buzzer_on);
@@ -499,23 +560,37 @@ static void FSM_Test_Run(void)
 
 /* USER CODE END 4 */
 
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
 void Error_Handler(void)
 {
-    __disable_irq();
-
-    Relay_Off();
-    Buzzer_Off();
-
-    while (1)
-    {
-        /* Keep outputs in a safe state. */
-    }
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  __disable_irq();
+  L298N_Off();
+  Buzzer_Off();
+  while (1)
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */
 }
-
 #ifdef USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-    (void)file;
-    (void)line;
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  (void)file;
+  (void)line;
+  /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

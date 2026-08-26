@@ -161,6 +161,26 @@ void OLED_ShowStatus(const char *st)
     OLED_Render();
 }
 
+void OLED_ShowWaterState(float level, const char *status)
+{
+    oled_level = level;
+
+    if (status == NULL)
+    {
+        status = "UNKNOWN";
+    }
+
+    strncpy(
+        oled_status,
+        status,
+        sizeof(oled_status) - 1U
+    );
+
+    oled_status[sizeof(oled_status) - 1U] = '\0';
+
+    OLED_Render();
+}
+
 void OLED_ShowUltrasonicTest(
     uint32_t sample,
     float distance_cm,

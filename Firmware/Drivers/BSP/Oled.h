@@ -8,6 +8,7 @@ void OLED_SetI2CAddress(uint8_t address_7bit);
 bool OLED_Init(void);
 void OLED_ShowLevel(float level);
 void OLED_ShowStatus(const char *st);
+void OLED_ShowWaterState(float level, const char *status);
 void OLED_ShowUltrasonicTest(
     uint32_t sample,
     float distance_cm,

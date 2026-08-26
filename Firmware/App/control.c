@@ -1,15 +1,15 @@
 #include "control.h"
 #include "fsm.h"
 #include "water_sensor.h"
-#include "relay.h"
+#include "ln298n.h"
 #include "buzzer.h"
 #include "oled.h"
 
 void Control_Init(void)
 {
-    Relay_Off();
+    L298N_Off();
     Buzzer_Off();
-    OLED_ShowStatus("Khoi dong...");
+    OLED_ShowWaterState(-1.0f, "Khoi dong...");
 }
 
 void Control_Update(void)
@@ -23,38 +23,37 @@ void Control_Update(void)
      * nhanh, khong ton chi phi loc lai; muc dich chi de hien thi, khong
      * anh huong den logic FSM). */
     float percent = WaterSensor_ReadPercent();
-    OLED_ShowLevel(percent);
 
     switch (state)
     {
     case FSM_STATE_INIT:
-        Relay_Off();
+        L298N_Off();
         Buzzer_Off();
-        OLED_ShowStatus("Khoi dong...");
+        OLED_ShowWaterState(percent, "Khoi dong...");
         break;
 
     case FSM_STATE_FILLING:
-        Relay_On();
+        L298N_On();
         Buzzer_Off();
-        OLED_ShowStatus("Dang bom nuoc");
+        OLED_ShowWaterState(percent, "Dang bom nuoc");
         break;
 
     case FSM_STATE_FULL:
-        Relay_Off();
+        L298N_Off();
         Buzzer_Off();
-        OLED_ShowStatus("Be day - OK");
+        OLED_ShowWaterState(percent, "Be day - OK");
         break;
 
     case FSM_STATE_OVERFLOW:
-        Relay_Off();      /* cuong buc tat bom, bat ke trang thai truoc do */
+        L298N_Off();      /* cuong buc tat bom, bat ke trang thai truoc do */
         Buzzer_On();
-        OLED_ShowStatus("CANH BAO TRAN!");
+        OLED_ShowWaterState(percent, "CANH BAO TRAN!");
         break;
 
     case FSM_STATE_ERROR:
-        Relay_Off();      /* an toan: khong doan mo bom khi khong biet muc nuoc */
+        L298N_Off();      /* an toan: khong doan mo bom khi khong biet muc nuoc */
         Buzzer_On();
-        OLED_ShowStatus("LOI CAM BIEN!");
+        OLED_ShowWaterState(percent, "LOI CAM BIEN!");
         break;
 
     default:

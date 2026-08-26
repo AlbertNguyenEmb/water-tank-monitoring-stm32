@@ -3,7 +3,7 @@
 
 /**
  * @brief  Khoi tao toan bo he thong theo dung thu tu:
- *         cac driver BSP truoc (Relay/WaterSensor/OLED), roi den
+ *         cac driver BSP truoc (L298N/WaterSensor/OLED), roi den
  *         Middleware (Filter/Logger), cuoi cung la logic (FSM/Control).
  *         Goi 1 lan trong main(), SAU KHI HAL_Init() va cac ngoai vi
  *         (ADC/UART/I2C/GPIO/Timer) da duoc CubeMX khoi tao xong.
